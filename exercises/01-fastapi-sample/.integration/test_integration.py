@@ -52,7 +52,7 @@ def test_happy_path(client: TestClient, db_session: Session) -> None:
     user_id3, token3 = assertions.user.post(client, email3, "iLoveGuns")
     assertions.user.get(client, user_id3, email3, token3)
 
-    assertions.item.get(client, token1, [])
+    assertions.item.get(client, user_id1, token1, [])
 
     # prepare expected items
     prepared_items = []
@@ -135,32 +135,56 @@ def test_happy_path(client: TestClient, db_session: Session) -> None:
             )
 
     # 2. get items
-    ordered_full_items = [
-        expected_item6,
-        expected_item5,
-        expected_item3,
-        expected_item2,
-        expected_item1,
-        expected_item4,
-    ]
-    assertions.item.get(client, token1, ordered_full_items)
+    # no option
     assertions.item.get(
-        client,
-        token1,
-        [expected_item6, expected_item5, expected_item2, expected_item1],
-        done=False,
+        client, user_id1, token1, [expected_item3, expected_item2, expected_item1]
     )
-    assertions.item.get(client, token1, [expected_item3, expected_item4], done=True)
+    assertions.item.get(client, user_id2, token2, [expected_item5, expected_item4])
+    assertions.item.get(client, user_id3, token3, [expected_item6])
+
+    # done
     assertions.item.get(
-        client, token1, [expected_item5, expected_item3], date="20230103"
+        client, user_id1, token1, [expected_item2, expected_item1], done=False
     )
-    assertions.item.get(client, token1, [expected_item3], date="20230103", done=True)
+    assertions.item.get(client, user_id2, token2, [expected_item5], done=False)
+    assertions.item.get(client, user_id3, token3, [expected_item6], done=False)
+    assertions.item.get(client, user_id1, token1, [expected_item3], done=True)
+    assertions.item.get(client, user_id2, token2, [expected_item4], done=True)
+    assertions.item.get(client, user_id3, token3, [], done=True)
+
+    # date
+    assertions.item.get(client, user_id1, token1, [expected_item3], date="20230103")
+    assertions.item.get(client, user_id2, token3, [expected_item5], date="20230103")
+    assertions.item.get(client, user_id3, token3, [], date="20230103")
+
+    # date and done
+    assertions.item.get(
+        client, user_id1, token1, [expected_item3], date="20230103", done=True
+    )
+    assertions.item.get(client, user_id2, token2, [], date="20230103", done=True)
 
     # 3. delete user
     assertions.user.delete(client, user_id2, token1)
     expected_item4["owner_id"] = user_id1
     expected_item5["owner_id"] = user_id1
-    assertions.item.get(client, token1, ordered_full_items)
+    assertions.item.get(
+        client,
+        user_id1,
+        token1,
+        [
+            expected_item5,
+            expected_item3,
+            expected_item2,
+            expected_item1,
+            expected_item4,
+        ],
+    )
+    assertions.item.get(
+        client,
+        user_id3,
+        token3,
+        [expected_item6],
+    )
 
     assertions.user.delete(client, user_id1, token3)
     expected_item1["owner_id"] = user_id3
@@ -168,4 +192,16 @@ def test_happy_path(client: TestClient, db_session: Session) -> None:
     expected_item3["owner_id"] = user_id3
     expected_item4["owner_id"] = user_id3
     expected_item5["owner_id"] = user_id3
-    assertions.item.get(client, token3, ordered_full_items)
+    assertions.item.get(
+        client,
+        user_id3,
+        token3,
+        [
+            expected_item6,
+            expected_item5,
+            expected_item3,
+            expected_item2,
+            expected_item1,
+            expected_item4,
+        ],
+    )

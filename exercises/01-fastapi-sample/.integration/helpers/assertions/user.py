@@ -25,7 +25,7 @@ def post(client: TestClient, email: str, password: str) -> Tuple[str, str]:
     assert "id" in data
     assert "token" in data or "api_token" in data
     assert data["email"] == email
-    return data["id"], data["token"] or data["api_token"]
+    return data["id"], data.get("token") or data.get("api_token")
 
 
 def get(client: TestClient, user_id: str, email: str, token: str) -> None:

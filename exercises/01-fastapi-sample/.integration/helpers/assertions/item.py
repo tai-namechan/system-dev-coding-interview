@@ -87,6 +87,7 @@ def patch(
 
 def get(
     client: TestClient,
+    user_id: str,
     token: str,
     expected: List[_ExpectedItem],
     date: Optional[str] = None,
@@ -108,7 +109,7 @@ def get(
         params["done"] = str(done)
 
     response = client.get(
-        "/items",
+        f"/users/{user_id}/items",
         headers={"X-API-TOKEN": token},
         params=params,
     )
