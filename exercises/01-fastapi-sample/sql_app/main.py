@@ -44,7 +44,7 @@ def health_check(db: Session = db_session) -> schemas.HealthCheck:
     return schemas.HealthCheck(status="ok")
 
 
-@app.post("/users", response_model=schemas.User)
+@app.post("/users", response_model=schemas.UserCreated)
 def create_user(user: schemas.UserCreate, db: Session = db_session) -> models.User:
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
