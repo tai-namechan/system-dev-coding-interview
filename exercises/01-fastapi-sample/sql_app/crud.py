@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime
 from typing import List, Optional
 
 from pwdlib import PasswordHash
@@ -45,6 +46,21 @@ def get_item(
         models.Item.owner_id == user_id, models.Item.id == item_id
     )
     return q.first()
+
+
+def get_items_by_user(
+    db: Session,
+    user_id: int,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    done: bool | None = None,
+) -> List[models.Item]:
+    q = db.query(models.Item).filter(models.Item.owner_id == user_id)
+    if date_from is not None and date_to is not None:
+        q = q.filter(models.Item.created_at >= date_from, models.Item.created_at < date_to)
+    if done is not None:
+        q = q.filter(models.Item.done == done)
+    return q.order_by(models.Item.created_at.desc()).all()
 
 
 def get_items(db: Session, skip: int = 0, limit: int = 100) -> List[models.Item]:

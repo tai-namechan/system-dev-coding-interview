@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from typing import Generator, List
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -68,6 +69,25 @@ def read_user(
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
+
+
+@app.get("/users/{user_id}/items", response_model=List[schemas.Item])
+def read_items_for_user(
+    user_id: int,
+    date: str | None = None,
+    done: bool | None = None,
+    db: Session = db_session,
+    _: models.User = current_user_dep,
+) -> List[models.Item]:
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    if date is not None:
+        try:
+            date_from = datetime.strptime(date, "%Y%m%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYYMMDD.")
+        date_to = date_from + timedelta(days=1)
+    return crud.get_items_by_user(db, user_id=user_id, date_from=date_from, date_to=date_to, done=done)
 
 
 @app.post("/users/{user_id}/items", response_model=schemas.Item)
