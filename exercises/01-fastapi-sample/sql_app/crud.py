@@ -12,7 +12,11 @@ pwd_context = PasswordHash([BcryptHasher()])
 
 
 def get_user(db: Session, user_id: int) -> Optional[models.User]:
-    return db.query(models.User).filter(models.User.id == user_id).first()
+    return (
+        db.query(models.User)
+        .filter(models.User.id == user_id, models.User.is_active == True)  # noqa: E712
+        .first()
+    )
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[models.User]:
@@ -24,7 +28,11 @@ def get_users(db: Session, skip: int = 0, limit: int = 100) -> List[models.User]
 
 
 def get_user_by_api_token(db: Session, api_token: str) -> Optional[models.User]:
-    return db.query(models.User).filter(models.User.api_token == api_token).first()
+    return (
+        db.query(models.User)
+        .filter(models.User.api_token == api_token, models.User.is_active == True)  # noqa: E712
+        .first()
+    )
 
 
 def create_user(db: Session, user: schemas.UserCreate) -> models.User:
@@ -35,6 +43,28 @@ def create_user(db: Session, user: schemas.UserCreate) -> models.User:
     db.commit()
     db.refresh(db_user)
     return db_user
+
+
+def delete_user(db: Session, user: models.User) -> None:
+    # 有効なユーザーの中で id が最小のユーザーを移管先として選ぶ
+    new_owner = (
+        db.query(models.User)
+        .filter(models.User.is_active == True, models.User.id != user.id)  # noqa: E712
+        .order_by(models.User.id.asc())
+        .first()
+    )
+
+    if new_owner is not None:
+        # 削除対象ユーザーの item を一括で新オーナーへ移管する
+        db.query(models.Item).filter(models.Item.owner_id == user.id).update(
+            {"owner_id": new_owner.id}
+        )
+
+    # ユーザーを論理削除する（物理削除はしない）
+    user.is_active = False
+
+    # item 移管とユーザー非活性化を同一トランザクションでコミットする
+    db.commit()
 
 
 def get_item(
