@@ -26,6 +26,8 @@ def override_get_db() -> Generator[Session, None, None]:
 
 app.dependency_overrides[get_db] = override_get_db
 
+db_session = pytest.fixture()(override_get_db)
+
 
 @pytest.fixture()
 def test_db() -> Generator[None, None, None]:

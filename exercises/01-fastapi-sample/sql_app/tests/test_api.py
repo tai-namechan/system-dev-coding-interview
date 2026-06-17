@@ -1,5 +1,10 @@
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from ..models import Item
 
 
 @pytest.mark.usefixtures("test_db")
@@ -63,6 +68,110 @@ def test_health_check_no_auth(client: TestClient) -> None:
     response = client.get("/health-check")
     # ヘルスチェックは認証不要で 200 を返すこと
     assert response.status_code == 200, response.text
+
+
+@pytest.mark.usefixtures("test_db")
+def test_get_items_for_user(client: TestClient, db_session: Session) -> None:
+    # ---- セットアップ: 2ユーザーとそれぞれのアイテムを作成 ----
+    res = client.post("/users", json={"email": "user1@example.com", "password": "pass1"})
+    user1 = res.json()
+    user_id1, token1 = user1["id"], user1["api_token"]
+
+    res = client.post("/users", json={"email": "user2@example.com", "password": "pass2"})
+    user2 = res.json()
+    user_id2, token2 = user2["id"], user2["api_token"]
+
+    res = client.post(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        json={"title": "Old Item", "description": "desc"},
+    )
+    item_old_id = res.json()["id"]
+    _set_created_at(db_session, item_old_id, datetime(2023, 1, 1))
+
+    res = client.post(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        json={"title": "New Item", "description": "desc"},
+    )
+    item_new_id = res.json()["id"]
+    _set_created_at(db_session, item_new_id, datetime(2023, 1, 3))
+
+    res = client.post(
+        f"/users/{user_id2}/items",
+        headers={"X-API-TOKEN": token2},
+        json={"title": "User2 Item", "description": "desc"},
+    )
+    item_user2_id = res.json()["id"]
+
+    # フィルタなし: created_at 降順で user1 のアイテムのみ返ること
+    res = client.get(f"/users/{user_id1}/items", headers={"X-API-TOKEN": token1})
+    assert res.status_code == 200, res.text
+    ids = [d["id"] for d in res.json()]
+    assert ids == [item_new_id, item_old_id]
+    # user2 のアイテムが含まれないこと（owner_id スコープ）
+    assert item_user2_id not in ids
+
+    # done=False で未完了のみ返ること
+    client.patch(
+        f"/users/{user_id1}/items/{item_new_id}",
+        headers={"X-API-TOKEN": token1},
+        json={"done": True},
+    )
+    res = client.get(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        params={"done": "False"},
+    )
+    assert res.status_code == 200, res.text
+    assert [d["id"] for d in res.json()] == [item_old_id]
+
+    # done=True で完了済みのみ返ること
+    res = client.get(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        params={"done": "True"},
+    )
+    assert res.status_code == 200, res.text
+    assert [d["id"] for d in res.json()] == [item_new_id]
+
+    # date=20230103 で 2023-01-03 の JST 日付範囲のアイテムのみ返ること
+    res = client.get(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        params={"date": "20230103"},
+    )
+    assert res.status_code == 200, res.text
+    assert [d["id"] for d in res.json()] == [item_new_id]
+
+    # date + done の組み合わせフィルタが機能すること
+    res = client.get(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        params={"date": "20230103", "done": "False"},
+    )
+    assert res.status_code == 200, res.text
+    # item_new は done=True なので、done=False で絞ると 0 件
+    assert res.json() == []
+
+    # 不正な date フォーマットは 400 を返すこと
+    res = client.get(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        params={"date": "2023-01-03"},
+    )
+    assert res.status_code == 400, res.text
+
+    # 認証なしでは 401 を返すこと
+    res = client.get(f"/users/{user_id1}/items")
+    assert res.status_code == 401, res.text
+
+
+def _set_created_at(db: Session, item_id: int, created_at: datetime) -> None:
+    item = db.query(Item).filter(Item.id == item_id).first()
+    assert item is not None
+    item.created_at = created_at
+    db.commit()
 
 
 @pytest.mark.usefixtures("test_db")
