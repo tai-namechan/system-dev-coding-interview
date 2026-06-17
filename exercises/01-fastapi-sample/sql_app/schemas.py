@@ -43,6 +43,7 @@ class UserCreate(UserBase):
 class User(UserBase):
     id: int
     is_active: bool
+    api_token: str
     items: List[Item] = []
 
     model_config = ConfigDict(from_attributes=True)

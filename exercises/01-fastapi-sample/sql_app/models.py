@@ -16,6 +16,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    api_token: Mapped[str] = mapped_column(String, unique=True, index=True)
 
     items = relationship("Item", back_populates="owner")
 
