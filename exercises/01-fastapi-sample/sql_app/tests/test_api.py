@@ -30,6 +30,8 @@ def test_create_user(client: TestClient) -> None:
     data = response.json()
     assert data["email"] == "deadpool@example.com"
     assert data["id"] == user_id
+    # GET レスポンスには api_token が含まれないこと（作成時のみ返す）
+    assert "api_token" not in data
 
 
 @pytest.mark.usefixtures("test_db")
