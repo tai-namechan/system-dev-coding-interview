@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from ..models import Item
+from ..models import Item, User
 
 
 @pytest.mark.usefixtures("test_db")
@@ -172,6 +172,87 @@ def _set_created_at(db: Session, item_id: int, created_at: datetime) -> None:
     assert item is not None
     item.created_at = created_at
     db.commit()
+
+
+@pytest.mark.usefixtures("test_db")
+def test_delete_user(client: TestClient, db_session: Session) -> None:
+    # ---- セットアップ: 2ユーザーとアイテムを作成 ----
+    res = client.post("/users", json={"email": "user1@example.com", "password": "pass1"})
+    user1 = res.json()
+    user_id1, token1 = user1["id"], user1["api_token"]
+
+    res = client.post("/users", json={"email": "user2@example.com", "password": "pass2"})
+    user2 = res.json()
+    user_id2, token2 = user2["id"], user2["api_token"]
+
+    res = client.post(
+        f"/users/{user_id2}/items",
+        headers={"X-API-TOKEN": token2},
+        json={"title": "user2 item", "description": "desc"},
+    )
+    item_id = res.json()["id"]
+
+    # user2 を削除すると 204 が返ること
+    res = client.delete(f"/users/{user_id2}", headers={"X-API-TOKEN": token1})
+    assert res.status_code == 204, res.text
+
+    # 削除後に GET すると 404 が返ること（論理削除で非活性になっているため）
+    res = client.get(f"/users/{user_id2}", headers={"X-API-TOKEN": token1})
+    assert res.status_code == 404, res.text
+
+    # 削除済みユーザーのトークンでは認証できないこと
+    res = client.get("/users", headers={"X-API-TOKEN": token2})
+    assert res.status_code == 401, res.text
+
+    # item の所有者が有効ユーザーの最小 id（user1）へ移っていること
+    items = client.get(f"/users/{user_id1}/items", headers={"X-API-TOKEN": token1}).json()
+    assert any(d["id"] == item_id for d in items)
+
+    # DB で is_active が False になっていること
+    user = db_session.query(User).filter(User.id == user_id2).first()
+    assert user is not None
+    assert user.is_active is False
+
+
+@pytest.mark.usefixtures("test_db")
+def test_delete_user_not_found(client: TestClient) -> None:
+    res = client.post("/users", json={"email": "user1@example.com", "password": "pass1"})
+    token = res.json()["api_token"]
+
+    res = client.delete("/users/99999", headers={"X-API-TOKEN": token})
+    # 存在しないユーザーを削除しようとすると 404 が返ること
+    assert res.status_code == 404, res.text
+
+
+@pytest.mark.usefixtures("test_db")
+def test_delete_user_no_transfer_target(client: TestClient, db_session: Session) -> None:
+    # 自分しかいない状態でも削除が成功すること（移管先なし）
+    res = client.post("/users", json={"email": "user1@example.com", "password": "pass1"})
+    user1 = res.json()
+    user_id1, token1 = user1["id"], user1["api_token"]
+
+    res = client.post(
+        f"/users/{user_id1}/items",
+        headers={"X-API-TOKEN": token1},
+        json={"title": "item", "description": "desc"},
+    )
+    item_id = res.json()["id"]
+
+    res = client.delete(f"/users/{user_id1}", headers={"X-API-TOKEN": token1})
+    # 移管先がいなくても削除は成功すること
+    assert res.status_code == 204, res.text
+
+    # 移管先がいない場合、item の owner_id は変わらないこと
+    item = db_session.query(Item).filter(Item.id == item_id).first()
+    assert item is not None
+    assert item.owner_id == user_id1
+
+
+@pytest.mark.usefixtures("test_db")
+def test_delete_user_requires_auth(client: TestClient) -> None:
+    res = client.delete("/users/1")
+    # 認証なしで削除を試みると 401 が返ること
+    assert res.status_code == 401, res.text
 
 
 @pytest.mark.usefixtures("test_db")
